@@ -1,42 +1,49 @@
-using System.Net;
-using System.Net.WebSockets;
-using System.Text;
-
-var builder = WebApplication.CreateBuilder(args);
-var app = builder.Build();
-
-app.UseWebSockets();
-app.Map("/ws", async context =>
+namespace Akasha
 {
-    if (context.WebSockets.IsWebSocketRequest)
+    static class Launcher
     {
-        Console.WriteLine($"Connected to '{context.Connection.RemoteIpAddress?.ToString()}'");
-        using var webSocket = await context.WebSockets.AcceptWebSocketAsync();
-        var rand = new Random();
-
-        while (true)
+        public static void Main(string[] args)
         {
-            var now = DateTime.Now;
-            byte[] data = Encoding.ASCII.GetBytes($"{now}");
-            await webSocket.SendAsync(data, WebSocketMessageType.Text,
-                true, CancellationToken.None);
-            await Task.Delay(1000);
 
-            long r = rand.NextInt64(0, 10);
+            var builder = WebApplication.CreateBuilder(args);
+            var app = builder.Build();
 
-            if (r == 7)
+            app.UseWebSockets();
+            app.Map("/ws", async context =>
             {
-                await webSocket.CloseAsync(WebSocketCloseStatus.NormalClosure,
-                    "random closing", CancellationToken.None);
+                if (context.WebSockets.IsWebSocketRequest)
+                {
+                    Console.WriteLine($"Connected to '{context.Connection.RemoteIpAddress?.ToString()}'");
+                    using var webSocket = await context.WebSockets.AcceptWebSocketAsync();
+                    var rand = new Random();
 
-                return;
-            }
+                    while (true)
+                    {
+                        var now = DateTime.Now;
+                        byte[] data = Encoding.ASCII.GetBytes($"{now}");
+                        await webSocket.SendAsync(data, WebSocketMessageType.Text,
+                            true, CancellationToken.None);
+                        await Task.Delay(1000);
+
+                        long r = rand.NextInt64(0, 10);
+
+                        if (r <= 3)
+                        {
+                            await webSocket.CloseAsync(WebSocketCloseStatus.NormalClosure,
+                                "random closing", CancellationToken.None);
+
+                            return;
+                        }
+                    }
+                }
+                else
+                {
+                    context.Response.StatusCode = (int)HttpStatusCode.BadRequest;
+                }
+            });
+
+            app.Run("http://localhost:8888");
+
         }
     }
-    else
-    {
-        context.Response.StatusCode = (int)HttpStatusCode.BadRequest;
-    }
-});
-
-app.Run("http://localhost:8888");
+}
