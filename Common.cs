@@ -2,16 +2,33 @@ namespace Akasha
 {
     namespace Common.Server
     {
-        public class UserInfo
+        public class UserState
         {
-            public string? UserName { get; set; }
-            public uint UID { get; set; }
-            public byte[]? SecPassword { get; set; }
             public bool isOnline { get; set; }
             public DateTime LastPingTime { get; set; }
             public uint ChatingWithUID { get; set; }
-            [JsonIgnore]
             public WebSocket? WSConnection { get; set; }
+            public UserState()
+            {
+                isOnline = false;
+                LastPingTime = DateTime.MinValue;
+                ChatingWithUID = 0;
+            }
+        }
+        public class UserInfo
+        {
+            public required string UserName { get; set; }
+            public required byte[] SecPassword { get; set; }
+        }
+        public class UserDB
+        {
+            public uint NextUID { get; set; }
+            public ConcurrentDictionary<uint, UserInfo> UserDic { get; set; }
+            public UserDB()
+            {
+                NextUID = 100001;
+                UserDic = new();
+            }
         }
     }
     namespace Common
@@ -26,37 +43,47 @@ namespace Akasha
         {
 
         }
-        public sealed class WSRegister : WSMessage
-        {
-            public string? UserName { get; set; }
-            public uint UID { get; set; }
-            public byte[]? SecPassword { get; set; }
-        }
-        public sealed class WSLogin : WSMessage
-        {
-            public uint UID { get; set; }
-            public byte[]? SecPassword { get; set; }
-        }
         public sealed class WSResponse : WSMessage
         {
-            public uint Code { get; set; }
+            public required uint Code { get; set; }
         }
+        //1
+        public sealed class WSRegister : WSMessage
+        {
+            public required string UserName { get; set; }
+            public required byte[] SecPassword { get; set; }
+        }
+        //2
+        public sealed class WSLogin : WSMessage
+        {
+            public required uint UID { get; set; }
+            public required byte[] SecPassword { get; set; }
+        }
+        //3
         public sealed class WSChatRequest : WSMessage
         {
-            public uint FromUID { get; set; }
-            public uint ToUID { get; set; }
+            public required uint FromUID { get; set; }
+            public required uint ToUID { get; set; }
         }
+        //4
         public sealed class WSChatMessage : WSMessage
         {
-            public string? FromUserName { get; set; }
-            public uint FromUID { get; set; }
-            public uint ToUID { get; set; }
-            public string? Content { get; set; }
-            public string? Timestamp { get; set; }
+            public required string FromUserName { get; set; }
+            public required uint FromUID { get; set; }
+            public required uint ToUID { get; set; }
+            public required string Content { get; set; }
+            public required string Timestamp { get; set; }
         }
         public static class Extensions
         {
             public static byte[] GetMD5(this string data) => MD5.HashData(Encoding.UTF8.GetBytes(data));
+            public static string GetIPAddressWithPort(ConnectionInfo ci)
+            {
+                if (ci.RemoteIpAddress?.AddressFamily == AddressFamily.InterNetworkV6)
+                    return $"[{ci.RemoteIpAddress}]:{ci.RemotePort}";
+                else
+                    return $"{ci.RemoteIpAddress}:{ci.RemotePort}";
+            }
         }
     }
 }
