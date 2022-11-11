@@ -13,7 +13,7 @@ namespace Akasha
         }
         void LoadUserDB()
         {
-            var diUDB = new DirectoryInfo(UserDBPath);
+            var diUDB = new FileInfo(UserDBPath);
             if (diUDB.Exists)
             {
                 using var sUDB = File.Open(diUDB.FullName, FileMode.Open);
@@ -29,21 +29,133 @@ namespace Akasha
                 UserStateDic.TryAdd(u, new UserState());
             }
         }
+
+        async Task SendResponseAsync(WebSocket ws, uint code, string msg = "")
+        {
+            var response = new WSResponse { Code = code, Msg = msg };
+            var msgResponseJson = JsonSerializer.SerializeToUtf8Bytes<WSMessage>(response);
+            await ws.SendAsync(msgResponseJson, WebSocketMessageType.Binary,
+                    true, CancellationToken.None);
+        }
+        async Task RegisterHandler(WebSocket webSocket, WSRegister msgReg)
+        {
+            xUserDB.UserDic[xUserDB.NextUID] = new UserInfo
+            {
+                UserName = msgReg.UserName,
+                SecPassword = msgReg.SecPassword
+            };
+            Console.WriteLine($"[INFO]New Account: {msgReg.UserName}({xUserDB.NextUID})");
+            var task = SaveUserDBAsync();
+            await SendResponseAsync(webSocket, xUserDB.NextUID);
+            xUserDB.NextUID++;
+            await task;
+        }
+        async Task<uint> LoginHandler(WebSocket webSocket, WSLogin msgLogin)
+        {
+            var uid = msgLogin.UID;
+            var pwd = msgLogin.SecPassword.ToString() ?? "";
+            string tpwd;
+            try
+            {
+                tpwd = xUserDB.UserDic[uid].SecPassword.ToString() ?? "";
+            }
+            catch (KeyNotFoundException)
+            {
+                await SendResponseAsync(webSocket, 0);
+                return 0;
+            }
+            if (pwd == tpwd)
+            {
+                if (UserStateDic.ContainsKey(uid))
+                {
+                    UserStateDic[uid].isOnline = true;
+                    UserStateDic[uid].WSConnection = webSocket;
+                }
+                else
+                {
+                    UserStateDic.TryAdd(uid, new UserState
+                    {
+                        isOnline = true,
+                        WSConnection = webSocket
+                    });
+                }
+                await SendResponseAsync(webSocket, uid, xUserDB.UserDic[uid].UserName);
+                return uid;
+            }
+            else
+            {
+                await SendResponseAsync(webSocket, 0);
+                return 0;
+            }
+        }
+        async Task ChatMsgHandler(WebSocket webSocket, WSChatMessage msgChat)
+        {
+            if (UserStateDic.ContainsKey(msgChat.ToUID))
+            {
+                if (UserStateDic[msgChat.ToUID].isOnline == true)
+                {
+                    var msgJson = JsonSerializer.SerializeToUtf8Bytes<WSMessage>(msgChat);
+                    if (UserStateDic[msgChat.ToUID].WSConnection?.State == WebSocketState.Open)
+                    {
+                        Task t;
+                        lock (UserStateDic[msgChat.ToUID].WSSendLock)
+                        {
+                            t = UserStateDic[msgChat.ToUID].WSConnection.SendAsync(msgJson, WebSocketMessageType.Binary,
+                                true, CancellationToken.None);
+                        }
+                        await t;
+                    }
+                }
+            }
+        }
+        // async Task ChatRequestHandler(WebSocket webSocket, WSChatRequest msgChatRequest)
+        // {
+        //     if (UserStateDic.ContainsKey(msgChatRequest.FromUID) && UserStateDic.ContainsKey(msgChatRequest.ToUID))
+        //     {
+        //         if (UserStateDic[msgChatRequest.FromUID].isOnline == true
+        //             && UserStateDic[msgChatRequest.FromUID].ChatingWithUID <= 100_000
+        //             && UserStateDic[msgChatRequest.ToUID].isOnline == true
+        //             && UserStateDic[msgChatRequest.ToUID].ChatingWithUID <= 100_000)
+        //         {
+        //             var reqJson = JsonSerializer.SerializeToUtf8Bytes<WSMessage>(msgChatRequest);
+        //             if (UserStateDic[msgChatRequest.ToUID].WSConnection?.State == WebSocketState.Open)
+        //             {
+        //                 await UserStateDic[msgChatRequest.ToUID].WSConnection.SendAsync(reqJson, WebSocketMessageType.Binary, true, CancellationToken.None);
+        //             }
+        //         }
+        //     }
+        // }
+        // async Task ChatRequestResponseHandler(WSResponse msgResp, uint fuid)
+        // {
+        //     if (msgResp.Code > 100_000)
+        //     {
+        //         var respJson = JsonSerializer.SerializeToUtf8Bytes<WSMessage>(msgResp);
+        //         if (UserStateDic[msgResp.Code].WSConnection?.State == WebSocketState.Open)
+        //         {
+        //             await UserStateDic[msgResp.Code].WSConnection.SendAsync(respJson, WebSocketMessageType.Binary, true, CancellationToken.None);
+        //         }
+        //         UserStateDic[fuid].ChatingWithUID = msgResp.Code;
+        //         UserStateDic[msgResp.Code].ChatingWithUID = fuid;
+
+        //     }
+        // }
+
         async Task WSRequestHandler(HttpContext context)
         {
             if (context.WebSockets.IsWebSocketRequest)
             {
                 Console.WriteLine($"[INFO]Connected to client '{GetIPAddressWithPort(context.Connection)}'");
                 using var webSocket = await context.WebSockets.AcceptWebSocketAsync();
-                var rand = new Random();
 
                 byte[] buf = new byte[4096];
+                uint uid = 0;
 
                 while (webSocket.State == WebSocketState.Open)
                 {
                     var result = await webSocket.ReceiveAsync(buf, CancellationToken.None);
                     if (result.MessageType == WebSocketMessageType.Close)
                     {
+                        UserStateDic[uid].isOnline = false;
                         await webSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, null, CancellationToken.None);
                         Console.WriteLine($"[INFO]Client '{GetIPAddressWithPort(context.Connection)}' terminated connection");
                     }
@@ -53,13 +165,27 @@ namespace Akasha
                             new ReadOnlySpan<byte>(buf, 0, result.Count));
                         if (msg is WSRegister msgReg)
                         {
-                            xUserDB.UserDic[xUserDB.NextUID++] = new UserInfo
-                            {
-                                UserName = msgReg.UserName,
-                                SecPassword = msgReg.SecPassword
-                            };
-                            SaveUserDB();
+                            await RegisterHandler(webSocket, msgReg);
                         }
+                        else if (msg is WSLogin msgLogin)
+                        {
+                            uid = await LoginHandler(webSocket, msgLogin);
+                        }
+                        else if (msg is WSChatMessage msgChat)
+                        {
+                            await ChatMsgHandler(webSocket, msgChat);
+                        }
+                        // else if (msg is WSChatRequest msgChatRequest)
+                        // {
+                        //     await ChatRequestHandler(webSocket, msgChatRequest);
+                        // }
+                        // else if (msg is WSResponse msgResp)
+                        // {
+                        //     if (msgResp.Msg == "ChatRequestResponse")
+                        //     {
+                        //         await ChatRequestResponseHandler(msgResp, uid);
+                        //     }
+                        // }
                     }
                 }
             }
@@ -79,7 +205,7 @@ namespace Akasha
             app.Run("http://localhost:8888");
 
         }
-        void SaveUserDB()
+        async Task SaveUserDBAsync() => await Task.Run(() =>
         {
             lock (UserDBFileWriteLock)
             {
@@ -91,7 +217,7 @@ namespace Akasha
                 using var fsUserDB = File.Open(UserDBPath, FileMode.Create);
                 fsUserDB.Write(UserDBJson);
             }
-        }
+        });
     }
     static class Launcher
     {

@@ -8,6 +8,7 @@ namespace Akasha
             public DateTime LastPingTime { get; set; }
             public uint ChatingWithUID { get; set; }
             public WebSocket? WSConnection { get; set; }
+            public object WSSendLock = new();
             public UserState()
             {
                 isOnline = false;
@@ -26,7 +27,7 @@ namespace Akasha
             public ConcurrentDictionary<uint, UserInfo> UserDic { get; set; }
             public UserDB()
             {
-                NextUID = 100001;
+                NextUID = 100_001;
                 UserDic = new();
             }
         }
@@ -46,6 +47,7 @@ namespace Akasha
         public sealed class WSResponse : WSMessage
         {
             public required uint Code { get; set; }
+            public string? Msg { get; set; }
         }
         //1
         public sealed class WSRegister : WSMessage
