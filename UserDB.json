@@ -1,8 +1,12 @@
 {
-  "NextUID": 100002,
+  "NextUID": 100003,
   "UserDic": {
     "100001": {
       "UserName": "Hello",
+      "SecPassword": "lzm8Ii96tAk0AwJ9LIsluA=="
+    },
+    "100002": {
+      "UserName": "Bello",
       "SecPassword": "lzm8Ii96tAk0AwJ9LIsluA=="
     }
   }

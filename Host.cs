@@ -44,7 +44,7 @@ namespace Akasha
                 UserName = msgReg.UserName,
                 SecPassword = msgReg.SecPassword
             };
-            Console.WriteLine($"[INFO]New Account: {msgReg.UserName}({xUserDB.NextUID})");
+            Console.WriteLine($"[INFO]New Sign up: {msgReg.UserName}({xUserDB.NextUID})");
             var task = SaveUserDBAsync();
             await SendResponseAsync(webSocket, xUserDB.NextUID);
             xUserDB.NextUID++;
@@ -80,6 +80,7 @@ namespace Akasha
                     });
                 }
                 await SendResponseAsync(webSocket, uid, xUserDB.UserDic[uid].UserName);
+                Console.WriteLine($"[INFO]{xUserDB.UserDic[uid].UserName}({uid}) has signed in");
                 return uid;
             }
             else
@@ -108,23 +109,20 @@ namespace Akasha
                 }
             }
         }
-        // async Task ChatRequestHandler(WebSocket webSocket, WSChatRequest msgChatRequest)
-        // {
-        //     if (UserStateDic.ContainsKey(msgChatRequest.FromUID) && UserStateDic.ContainsKey(msgChatRequest.ToUID))
-        //     {
-        //         if (UserStateDic[msgChatRequest.FromUID].isOnline == true
-        //             && UserStateDic[msgChatRequest.FromUID].ChatingWithUID <= 100_000
-        //             && UserStateDic[msgChatRequest.ToUID].isOnline == true
-        //             && UserStateDic[msgChatRequest.ToUID].ChatingWithUID <= 100_000)
-        //         {
-        //             var reqJson = JsonSerializer.SerializeToUtf8Bytes<WSMessage>(msgChatRequest);
-        //             if (UserStateDic[msgChatRequest.ToUID].WSConnection?.State == WebSocketState.Open)
-        //             {
-        //                 await UserStateDic[msgChatRequest.ToUID].WSConnection.SendAsync(reqJson, WebSocketMessageType.Binary, true, CancellationToken.None);
-        //             }
-        //         }
-        //     }
-        // }
+        async Task ChatRequestHandler(WebSocket webSocket, WSChatRequest msgChatRequest)
+        {
+            if (UserStateDic.ContainsKey(msgChatRequest.FromUID) && UserStateDic.ContainsKey(msgChatRequest.ToUID))
+            {
+                if (UserStateDic[msgChatRequest.FromUID].isOnline == true
+                    && UserStateDic[msgChatRequest.FromUID].ChatingWithUID <= 100_000
+                    && UserStateDic[msgChatRequest.ToUID].isOnline == true
+                    && UserStateDic[msgChatRequest.ToUID].ChatingWithUID <= 100_000)
+                {
+                    await SendResponseAsync(UserStateDic[msgChatRequest.ToUID].WSConnection,
+                        msgChatRequest.ToUID,xUserDB.UserDic[msgChatRequest.ToUID].UserName);
+                }
+            }
+        }
         // async Task ChatRequestResponseHandler(WSResponse msgResp, uint fuid)
         // {
         //     if (msgResp.Code > 100_000)
@@ -175,17 +173,6 @@ namespace Akasha
                         {
                             await ChatMsgHandler(webSocket, msgChat);
                         }
-                        // else if (msg is WSChatRequest msgChatRequest)
-                        // {
-                        //     await ChatRequestHandler(webSocket, msgChatRequest);
-                        // }
-                        // else if (msg is WSResponse msgResp)
-                        // {
-                        //     if (msgResp.Msg == "ChatRequestResponse")
-                        //     {
-                        //         await ChatRequestResponseHandler(msgResp, uid);
-                        //     }
-                        // }
                     }
                 }
             }
@@ -201,6 +188,13 @@ namespace Akasha
 
             app.UseWebSockets();
             app.Map("/ws", WSRequestHandler);
+            app.UseExceptionHandler(exceptionHandlerApp =>
+            {
+                exceptionHandlerApp.Run(async context =>
+                {
+                    Console.WriteLine("[ERROR]Exception thrown");
+                });
+            });
 
             app.Run("http://localhost:8888");
 
