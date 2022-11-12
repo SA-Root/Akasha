@@ -39,15 +39,15 @@ namespace Akasha
         }
         async Task RegisterHandler(WebSocket webSocket, WSRegister msgReg)
         {
-            xUserDB.UserDic[xUserDB.NextUID] = new UserInfo
+            var uid = xUserDB.NextUID++;
+            xUserDB.UserDic[uid] = new UserInfo
             {
                 UserName = msgReg.UserName,
                 SecPassword = msgReg.SecPassword
             };
-            Console.WriteLine($"[INFO]New Sign up: {msgReg.UserName}({xUserDB.NextUID})");
             var task = SaveUserDBAsync();
-            await SendResponseAsync(webSocket, xUserDB.NextUID);
-            xUserDB.NextUID++;
+            Console.WriteLine($"[INFO]New Sign up: {msgReg.UserName}({uid})");
+            await SendResponseAsync(webSocket, uid);
             await task;
         }
         async Task<uint> LoginHandler(WebSocket webSocket, WSLogin msgLogin)
@@ -119,7 +119,7 @@ namespace Akasha
                     && UserStateDic[msgChatRequest.ToUID].ChatingWithUID <= 100_000)
                 {
                     await SendResponseAsync(UserStateDic[msgChatRequest.ToUID].WSConnection,
-                        msgChatRequest.ToUID,xUserDB.UserDic[msgChatRequest.ToUID].UserName);
+                        msgChatRequest.ToUID, xUserDB.UserDic[msgChatRequest.ToUID].UserName);
                 }
             }
         }
