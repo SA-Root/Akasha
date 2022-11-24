@@ -55,33 +55,41 @@ namespace Akasha
             var uid = msgLogin.UID;
             var pwd = msgLogin.SecPassword.ToString() ?? "";
             string tpwd;
-            try
+            if (xUserDB.UserDic.ContainsKey(uid))
             {
-                tpwd = xUserDB.UserDic[uid].SecPassword.ToString() ?? "";
-            }
-            catch (KeyNotFoundException)
-            {
-                await SendResponseAsync(webSocket, 0);
-                return 0;
-            }
-            if (pwd == tpwd)
-            {
-                if (UserStateDic.ContainsKey(uid))
+                try
                 {
-                    UserStateDic[uid].isOnline = true;
-                    UserStateDic[uid].WSConnection = webSocket;
+                    tpwd = xUserDB.UserDic[uid].SecPassword.ToString() ?? "";
+                }
+                catch (KeyNotFoundException)
+                {
+                    await SendResponseAsync(webSocket, 0);
+                    return 0;
+                }
+                if (pwd == tpwd)
+                {
+                    if (UserStateDic.ContainsKey(uid))
+                    {
+                        UserStateDic[uid].isOnline = true;
+                        UserStateDic[uid].WSConnection = webSocket;
+                    }
+                    else
+                    {
+                        UserStateDic.TryAdd(uid, new UserState
+                        {
+                            isOnline = true,
+                            WSConnection = webSocket
+                        });
+                    }
+                    await SendResponseAsync(webSocket, uid, xUserDB.UserDic[uid].UserName);
+                    Console.WriteLine($"[INFO]{xUserDB.UserDic[uid].UserName}({uid}) has signed in");
+                    return uid;
                 }
                 else
                 {
-                    UserStateDic.TryAdd(uid, new UserState
-                    {
-                        isOnline = true,
-                        WSConnection = webSocket
-                    });
+                    await SendResponseAsync(webSocket, 0);
+                    return 0;
                 }
-                await SendResponseAsync(webSocket, uid, xUserDB.UserDic[uid].UserName);
-                Console.WriteLine($"[INFO]{xUserDB.UserDic[uid].UserName}({uid}) has signed in");
-                return uid;
             }
             else
             {
@@ -153,8 +161,9 @@ namespace Akasha
                     var result = await webSocket.ReceiveAsync(buf, CancellationToken.None);
                     if (result.MessageType == WebSocketMessageType.Close)
                     {
-                        UserStateDic[uid].isOnline = false;
-                        await webSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, null, CancellationToken.None);
+                        if (uid > 100_000) UserStateDic[uid].isOnline = false;
+                        // webSocket.Dispose();
+                        await webSocket.CloseOutputAsync(WebSocketCloseStatus.NormalClosure, null, CancellationToken.None);
                         Console.WriteLine($"[INFO]Client '{GetIPAddressWithPort(context.Connection)}' terminated connection");
                     }
                     else
@@ -191,12 +200,11 @@ namespace Akasha
             app.UseExceptionHandler(exceptionHandlerApp =>
             {
                 exceptionHandlerApp.Run(async context =>
-                {
-                    Console.WriteLine("[ERROR]Exception thrown");
-                });
+                    Console.WriteLine("[ERROR]Exception thrown")
+                );
             });
 
-            app.Run("http://localhost:8888");
+            app.Run("http://[::]:8888");
 
         }
         async Task SaveUserDBAsync() => await Task.Run(() =>
